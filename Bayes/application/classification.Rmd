@@ -1,0 +1,85 @@
+---
+title: "Titanic dataset classification"
+author: "Carsten Stahl"
+date: "2024-06-24"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rmcmc)
+
+# importing the data
+df <- read.csv("../titanic_classification_with_bayesian_stats/data/train_data.csv")
+df_test <- read.csv("../titanic_classification_with_bayesian_stats/data/test_data.csv")
+```
+
+## Using bayesian classification to predict the titanic dataset
+
+
+```{r cars}
+head(df)
+```
+
+### building $X$ and $y$
+First removing the id:
+```{r}
+df <- df[,-2:-1]
+# df$interc <- rep(1, length(df[,1]))
+
+y <- df[,1]
+
+
+X <- as.matrix(df[,-1])
+
+head(X)
+```
+
+### applying the bayesian logistic regression
+
+```{r}
+prior <- function(beta){prod(dnorm(beta))}
+
+beta_samples <- bayes_logit_reg_slice(1000, y, X,
+                                      prior = prior,
+                                      intveral_width = rep(10, length(X[1,])))
+
+distribution_report <- function(var, burn) {
+  sample <- beta_samples[burn:1000,var]
+  plot(sample, type="l")
+  hist(sample)
+  acf(sample)
+}
+
+distribution_report(3, 300)
+```
+````{r}
+beta_mean <- apply(beta_samples, 2, mean)
+
+
+compute_accuracy <- function(beta, X, y) {
+  eta <- X %*% beta
+  y_hat <- expit(eta)
+  
+  y_hat_pred <- as.numeric(y_hat >= 0.5)
+  
+  accuracy = sum(y_hat_pred == y) / length(y_hat_pred)
+  
+  return(accuracy)
+}
+
+compute_accuracy(beta_mean, X, y)
+
+````
+
+````{r}
+y_test <- df_test$Survived
+
+X_test <- as.matrix(df_test[,-3:-1])
+
+compute_accuracy(beta_mean, X_test, y_test)
+````
+
