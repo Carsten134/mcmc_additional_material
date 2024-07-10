@@ -1,0 +1,271 @@
+---
+title: "MCMC Seminar Discoveries"
+author: "Carsten Stahl"
+date: "2024-06-12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## dependencies
+library(rmcmc)
+library(rbenchmark)
+library(stats)
+```
+
+## MCMC Gibbs, Metropolis Hastings and One D slicing comparison
+This document is concerned with the comparison of Metropolis Hastings and Gibbs sampling method. Both are MCMC algorithms, meaning the draw from a stationary Marcov chain, which stationary distribution is the desired distribution to draw from. 
+
+### first test: Burn in time with normals
+We are going to draw from a standard normal distribution with normal proposal distributions and normal marginal distributions. 
+
+#### Metropolis Hastings
+
+```{r m.h-normal-data}
+
+p <- function(x) {dnorm(x)}
+q <- function(x, x_prime) {dnorm(x_prime, x)}
+q_sample <- function(x) {rnorm(1,x)}
+
+data_mh  = data.frame(x = metropolis_hastings(10, p, q, q_sample, 1000))
+```
+
+Let's plot the data:
+```{r}
+plot(data_mh$x, type="l")
+```
+Burn in time at around a 100. But we still see autocorrelation.
+
+plot acf:
+```{r}
+acf(data_mh$x)
+```
+Significant correlation up to lag 10. Need i say more? 
+
+plot the histogram:
+```{r}
+hist(data_mh$x)
+```
+We can see the tail at 10. Also very asymmetrical and much noise around the mean.
+
+### Gibbs
+
+How about gibbs?
+
+```{r}
+cond <- list(x1 = function(x) {rnorm(1, x)},
+     x2 = function(x) {rnorm(1,x)})
+
+init <- list(x1 = 10,
+             x2 = 10)
+
+data_g <- gibbs(cond, init, 1000)
+```
+
+Plotting the data:
+```{r}
+plot(data_g$x2, type="l")
+```
+Much less autocorrelation, almost no burn in.
+
+plot autocorrelation:
+```{r}
+acf(data_g$x1)
+```
+Correlation disappears at lag 1, truly white noise.
+
+```{r}
+hist(data_g$x2)
+```
+
+No tail, despite the initial value of 10. Much more symmetrical but still slightly skewed from the extreme initial value.
+
+#### One D slice
+We're going to test the one-d-slice
+```{r}
+data_s <- OneDSlice(1000, 10, 2, p)
+
+plot(data_s, type="l", main="one D slice MC", xlab = "iterations", ylab="Value")
+```
+
+Looking at the Acf:
+```{r}
+acf(data_s)
+```
+Even less autocorrelation but very similar to gibbs.
+```{r}
+hist(data_s)
+```
+Converged very quickly to a standard normal, very nice symmetry.
+
+
+### Test two: extreme initial values.
+
+Let's try initial values of 100 for gibbs and metropolis hastings:
+```{r}
+data_mh$x2 <- metropolis_hastings(100, p, q, q_sample, 1000)
+data_s_e <- OneDSlice(1000, 100, 2, p)
+```
+Runtime explodes, because the sample won't be picked up into the return.
+
+On the other hand on gibbs:
+```{r}
+init <- list(x1 = 100000,
+             x2 = 100000)
+
+data_g_2 <- gibbs(cond, init, 1000)
+```
+
+No change in runtime, because there is no randomness in the algorithm
+
+```{r}
+plot(data_g_2$x2, type="l")
+```
+It is astonishing how fast this converges.
+
+```{r}
+plot(data_g_2$x1[3:1000], type="l")
+```
+Just left out the first 3 observations and already stationary marcov chain.
+
+
+### Test 3: General runtime
+scaling in n.
+```{r}
+benchmark_dif_p <- function(vals, func, rep) {
+  # instanciate results
+  results <- data.frame(elapsed=rep(-1, length(vals)), n=vals)
+  for (i in 1:length(results$elapsed)) {
+    # benchmark for different sample sizes
+    temp <- benchmark(func(vals[i]), replications = rep, columns = c("elapsed"))
+    results$elapsed[i] <- temp$elapsed[1]
+  }
+  return(results)
+}
+
+```
+Look at results:
+
+```{r}
+func <- function (n){metropolis_hastings(1,p, q, q_sample, n)}
+vals <- c(10, 100, 200, 500, 1000)
+result <- benchmark_dif_p(vals, func, 5)
+```
+
+plotting the results:
+```{r}
+plot(result$n, result$elapsed, type="l")
+```
+Let's compare this to gibbs:
+```{r}
+func <- function(n) {gibbs(cond, init, n)}
+
+vals <- c(10, 100, 200, 500, 1000, 2000, 5000, 10000, 100000)
+
+results_g <- benchmark_dif_p(vals, func, 10)
+results_g
+```
+And finally slicing:
+
+```{r}
+func <- function(n) {OneDSlice(n, 10, 2, p)}
+
+results_s <- benchmark_dif_p(vals, func, 10)
+
+results_s
+```
+
+plotting the results against each other:
+```{r}
+
+plot(result$n,result$elapsed, type = "n", xlim = c(1, 100000), ylim = c(0, max(results_g$elapsed)), 
+     xlab = "Samplesize n", ylab = "elapsed in Sec.", main = "Gibbs vs M.H. vs. One-D-Slice runtime")
+# lines(result$n, result$elapsed, col="red")
+lines(results_g$n, results_g$elapsed, col="green")
+lines(results_s$n, results_s$elapsed, col="blue")
+legend("bottomright", legend = c("M.H.", "Gibbs", "Slicing"), 
+       col = c("red", "green", "blue"), lty = 1)
+
+``` 
+The runtime isn't even comparable. This is because, once the M.H. get's caught up on a value, that yields low acceptance probability in all directions, it stayes there for many iterations. Furthermore we need to understand, that R is an interpreted language and not compiled. That leads to for-loops being very slow.
+
+### Testing different interval stepsizes for one-d-slice
+
+The One-D-slice uses a holistic approach to find an interval, that is contains all of, or at least one interval of the horizontal slice of the density function at some random point $u\sim U(0, f(x))$ where $x$ is a random point sampled beforehand. For this approach a step size is used to increase the interval until the interval fulfills the latter property. Then is samples from the interval until it finds a sample within the slice. We differenciate between two stages:
+1. finding of the invterval
+2. sampling from the interval until we get a sample within the slice
+
+We are going to use different interval stepsizes and see how it affects the runtime (in the unimodal case).
+
+```{r}
+func <- function(w){OneDSlice(1000, 10, w, p)}
+ws <- seq(0.001, 10, length.out = 30)
+p <- function(x){dnorm(x)}
+
+results <- benchmark_dif_p(ws, func, 5)
+
+results
+```
+visualizing results:
+```{r}
+plot(x = results$n[1:10], y = results$elapsed[1:10], type="l", main="Runtime after interval width", xlab = "w", "ylab"="elapsed in S. ")
+```
+
+There is a sweet spot for the width of the interval for the standard normal it's $2\sigma^2$. Reasons for runtime increase if the interval-stepsize is too large:
+- stage one (finding the interval) is very fast
+- but stage two takes longer, because the interval is way larger than the slice
+
+If the interval-stepsize is too small:
+- we get longer runtimes for stage one
+- but in turn get faster runtime when it comes to stage two
+
+
+Let's look at the intervalls used for the slicing:
+```{r}
+data <- OneDSliceDebug(100, 10, 2, p)
+data
+```
+plotting the intervalls
+```{r}
+n <- length(data$x)
+plot(1:n, data$x, type="n", xlim=c(1,n),ylim = c(min(data$int.L), max(data$int.R)),
+     xlab = "iteration",
+     ylab = "value",
+     main="Intervals of slicing and observations")
+lines(1:n, data$x, col="red")
+lines(1:n, data$int.L)
+lines(1:n, data$int.R)
+```
+Now wrapping this thing in a function and experimenting with parameters:
+```{r}
+plot_intervals_of_slicing <- function(it, x0, w, p) {
+  data <- OneDSliceDebug(it, x0, w, p)
+  n <- length(data$x)
+  plot(1:n, data$x, type="n", xlim=c(1,n),ylim = c(min(data$int.L), max(data$int.R)),
+       xlab = "iteration",
+       ylab = "value",
+       main=paste("Intervals of slicing, w =", w , ",x0 =", x0))
+  lines(1:n, data$x, col="red")
+  lines(1:n, data$int.L)
+  lines(1:n, data$int.R)
+}
+```
+
+
+And now let's play with the parameters:
+```{r}
+p <- function(x) {dnorm(x, sd=0.2)}
+
+plot_intervals_of_slicing(100, 0, 0.0001, p)
+```
+small stepsizes stabilize the intervals used.
+
+```{r}
+plot_intervals_of_slicing(100, 10, 20, p)
+```
+```{r}
+plot_intervals_of_slicing(100, 20, 2, p)
+```
+With low density areas the intervall increases until it finds a mode and stays there. This can induce the risk of not capturing all the modes in a multimodal distribution.
+
