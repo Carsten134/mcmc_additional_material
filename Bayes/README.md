@@ -5,6 +5,7 @@ In this part of the repo we explore the application and theoretical properties o
 The goal was to compare performance of MLE and bayesian inference on the logistic regression case on synthetic data.
 
 We simulated data according to the process we want to model:
+
 $$
 \begin{align*}
 Y_i &\sim Bernoulli(\theta_i) \\
@@ -12,6 +13,7 @@ Y_i &\sim Bernoulli(\theta_i) \\
 \eta_i &= \beta_0+\beta_1 x_i \hspace{1em} x_i\in \mathbb R
 \end{align*}
 $$
+
 Note how this is only a single dimensional case. Future work could also include more dimensions.
 
 Next we applied MLE and our own function for bayesian logistic regression (`bayes_logit_reg_slice`) and tested it for small samples ranging from 5 to 100. To prove, that the correct prior yields an improvement in performance, we gave the prior the correct beta values. We therefore used the priors:
