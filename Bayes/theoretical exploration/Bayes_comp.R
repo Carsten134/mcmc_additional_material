@@ -36,7 +36,7 @@ df %>% ggplot(aes(x = x,
 # training glm
 lm <- glm(y ~ x,
           data = df,
-          family = "binomial")
+          family = binomial)
 
 plot(lm$model$x, lm$fitted.values, type="l")
 
@@ -83,7 +83,7 @@ df %>% ggplot(aes(x = x,
   ggtitle("logistic regression: OLS vs Bayes with right priors")
 
 
-## comparison between OLS and Bayes, accuracy comparison ######################
+## comparison between MLE and Bayes, accuracy comparison ######################
 
 # config
 ns <- c(5, 10, 20, 30, 50, 100)
@@ -94,7 +94,7 @@ ols_bayes_acc <- function(n_train, n_test, t) {
   train <- sim_sample(n_train, t)
   test <- sim_sample(n_test, t)
 
-  # OLS estimation
+  # ML estimation
   lm <- glm(y ~ x,
             data = train,
             family = binomial)

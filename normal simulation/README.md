@@ -1,0 +1,2 @@
+## Normal simulation using the Gibbs sampler
+This section of the repository is about the normal simulation, that can be found in our Report, when comparing it with slicing on high dimensional normal distributions.
